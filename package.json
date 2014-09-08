@@ -1,6 +1,6 @@
 {
   "name": "meteor-typeahead",
-  "version": "0.0.10",
+  "version": "0.1.2",
   "description": "Autocomplete package for meteor powered by twitter typeahead.js",
   "license": "MIT",
   "main": "index.js",
@@ -16,10 +16,14 @@
   "author": "Sergey Todyshev <stodyshev@gmail.com>",
   "contributors": [
     "Sergey Todyshev <stodyshev@gmail.com>",
+    "Benjamin Berman <benjamin.s.berman@gmail.com>",
     "Dan Dascalescu <ddascalescu+github@gmail.com>",
+    "Jess Latimer <jplatimer@gmail.com>",
+    "Oliver Lloyd <oliver_lloyd@hotmail.com>",
     "Thimo Brinkmann <thimo.brinkmann@googlemail.com>",
     "cinjon <cinjon.resnick@gmail.com>",
-    "grigio <grigio.org@gmail.com>"
+    "grigio <grigio.org@gmail.com>",
+    "zhenya <eugeneas@gmail.com>"
   ],
   "dependencies": {},
   "devDependencies": {

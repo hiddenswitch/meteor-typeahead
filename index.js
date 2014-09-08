@@ -1,3 +1,10 @@
+// String.trim polyfill
+if (!String.prototype.trim) {
+	String.prototype.trim = function () {
+		return this.replace(/^\s+|\s+$/g, '');
+	};
+}
+
 /**
  * Activates typeahead behavior for given element.
  * @param element (required) The DOM element to infect.
@@ -18,14 +25,14 @@ Meteor.typeahead = function(element, source) {
 	var highlight = Boolean($e.data('highlight')) || false;
 	var hint = Boolean($e.data('hint')) || false;
 	var minLength = parseInt($e.data('min-length')) || 1;
-	
-	if($e.data('autocompleted')) {
-		var autocompleted = resolve_template_function($e[0], $e.data('autocompleted'));
-	}
-	if($e.data('selected')) {
-		var selected = resolve_template_function($e[0], $e.data('selected'));
-	}
+	var autocompleted = null, selected = null;
 
+	if ($e.data('autocompleted')) {
+		autocompleted = resolve_template_function($e[0], $e.data('autocompleted'));
+	}
+	if ($e.data('selected')) {
+		selected = resolve_template_function($e[0], $e.data('selected'));
+	}
 
 	var options = $.extend(opts, {
 		highlight: highlight,
@@ -41,10 +48,10 @@ Meteor.typeahead = function(element, source) {
 	}
 
 	// event handlers (PR #18)
-	if (typeof selected == 'function') {
+	if ($.isFunction(selected)) {
 		instance.on('typeahead:selected', selected);
 	}
-	if (typeof autocompleted == 'function') {
+	if ($.isFunction(autocompleted)) {
 		instance.on('typeahead:autocompleted', autocompleted);
 	}
 
@@ -79,7 +86,7 @@ function resolve_datasets($e, source) {
 		if (typeof datasets == 'string') {
 			datasets = resolve_template_function(element, datasets);
 		}
-		if (typeof datasets == 'function') {
+		if ($.isFunction(datasets)) {
 			datasets = datasets() || [];
 		}
 		return datasets.map(function(ds) {
@@ -90,6 +97,7 @@ function resolve_datasets($e, source) {
 	var name = $e.attr('name') || $e.attr('id') || 'dataset';
 	var limit = $e.data('limit');
 	var templateName = $e.data('template'); // specifies name of custom template
+	var templates = $e.data('templates'); // specifies custom templates
 	var valueKey = $e.data('value-key');
 
 	if (!source) {
@@ -115,7 +123,28 @@ function resolve_datasets($e, source) {
 		dataset.template = templateName;
 	}
 
-	if (Array.isArray(source) || (typeof source == 'function' && source.length === 0)) {
+	// parse string with custom templates if it is specified
+	if (templates && typeof templates === 'string') {
+		var templateKeys = {header:1, footer:1, template: 1, suggestion: 1, empty: 1};
+		var pairs = templates.split(/[;,]+/);
+		pairs.map(function(s) {
+			var p = s.split(/[:=]+/).map(function(it){ return it.trim(); });
+			switch (p.length) {
+				case 1: // set suggestion template when no key is specified
+					return {key: 'template', value: p[0]};
+				case 2:
+					return (p[0] in templateKeys) ? {key: p[0], value: p[1]} : null;
+				default:
+					return null;
+			}
+		}).filter(function(p) {
+			return p !== null;
+		}).forEach(function(p) {
+			dataset[p.key] = p.value;
+		});
+	}
+
+	if ($.isArray(source) || ($.isFunction(source) && source.length === 0)) {
 		dataset.local = source;
 		return make_bloodhound(dataset);
 	}
@@ -127,15 +156,27 @@ function resolve_datasets($e, source) {
 }
 
 function resolve_template_function(element, name) {
-	var view = Blaze.getElementView(element);
-	if (!view) {
-		return [];
+	var fn = null;
+
+	if (typeof Blaze == "undefined") {
+		var component = UI.DomRange.getContainingComponent(element);
+		if (!component) {
+			return [];
+		}
+		fn = component[name];
+	} else {
+		var view = $.isFunction(Blaze.getView) ? Blaze.getView(element) : Blaze.getElementView(element);
+		if (!view) {
+			return [];
+		}
+		fn = view.template && view.template[name];
 	}
-	var fn = view.template && view.template[name];
-	if (typeof fn != 'function') {
+
+	if (!$.isFunction(fn)) {
 		console.log("Unable to resolve data source function '%s'.", name);
 		return [];
 	}
+
 	return fn;
 }
 
@@ -151,25 +192,41 @@ function make_template_function(templateName) {
 
 	return function(context) {
 		var div = $("<div/>");
-		var range = UI.renderWithData(tmpl, context);
-		UI.insert(range, div[0]);
+		if ($.isFunction(Blaze.renderWithData)) {
+			Blaze.renderWithData(tmpl, context, div[0]);
+		} else { // for meteor < v0.9
+			var range = UI.renderWithData(tmpl, context);
+			UI.insert(range, div[0]);
+		}
 		return div.html();
 	};
 }
 
 function make_templates(dataset) {
+
 	var templates = {};
-	if (dataset.header) {
-		templates.header = dataset.header;
-	}
-	if (dataset.template) {
-		var templateFn = typeof dataset.template == 'string' ?
-			make_template_function(dataset.template)
-			: dataset.template;
-		if (typeof templateFn == 'function') {
-			templates.suggestion = templateFn;
+
+	function set(key, value) {
+		if (typeof value === "string") {
+			if (value.indexOf('<') >= 0) {
+				templates[key] = value;
+			} else {
+				templates[key] = make_template_function(value);
+			}
+		} else if ($.isFunction(value)) {
+			templates[key] = value;
 		}
 	}
+
+	set('header', dataset.header);
+	set('footer', dataset.footer);
+	set('suggestion', dataset.template);
+	set('empty', dataset.empty);
+
+	if (!templates.suggestion && dataset.suggestion) {
+		set('suggestion', dataset.suggestion);
+	}
+
 	return templates;
 }
 
@@ -187,7 +244,7 @@ function make_bloodhound(dataset) {
 	if (!dataset.template) {
 		if (Array.isArray(dataset.local)) {
 			dataset.local = dataset.local.map(wrap_value);
-		} else if (typeof dataset.local == 'function' && dataset.local.length === 0) {
+		} else if ($.isFunction(dataset.local) && dataset.local.length === 0) {
 			var localFn = dataset.local;
 			dataset.local = function() {
 				return (localFn() || []).map(wrap_value);
@@ -196,7 +253,7 @@ function make_bloodhound(dataset) {
 	}
 
 	var need_bloodhound = Array.isArray(dataset.local) ||
-		typeof dataset.local == 'function' && dataset.local.length === 0;
+		$.isFunction(dataset.local) && dataset.local.length === 0;
 
 	var engine;
 	var valueKey = dataset.valueKey || 'value';
@@ -211,7 +268,7 @@ function make_bloodhound(dataset) {
 		engine = new Bloodhound(options);
 		engine.initialize();
 
-		if (typeof dataset.local == 'function' && dataset.local.length === 0) {
+		if ($.isFunction(dataset.local) && dataset.local.length === 0) {
 			// update data source on changing deps of local function
 			// TODO find better (functional) way to do that
 			Deps.autorun(function() {

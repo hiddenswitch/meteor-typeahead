@@ -1,6 +1,7 @@
 {
-  "packages":
-  {
-	  "typeahead":{"path": ".."}
+  "packages": {
+    "sergeyt:typeahead": {
+      "path": ".."
+    }
   }
 }
